@@ -1,0 +1,38 @@
+# The crew's contract for this repository — see docs/REPO_SPEC.md in the crew
+# repository. The hooks call npm scripts, so a first ticket can choose a
+# framework (or keep the plain handler) without editing this file.
+version: 1
+
+platform: unix
+
+hooks:
+  setup: npm install
+  # The sandbox test inside runs against the real workspace when the platform
+  # has delivered TABLATION_API_KEY, and skips with a notice when it has not.
+  test: npm test
+  build: npm run build
+
+# This file describes the template repository itself, which crew works as a
+# project: tickets here release by merge and tag, with no deploy step and no
+# `released` hook. The platform writes the generated repository's own
+# `release:` section (ci_auto, deploy.yml, a `released` hook checking
+# /healthz) when it generates one; README.md shows that block.
+release:
+  mode: integrate
+  versioning: auto
+  versionFiles: [package.json]
+  changelog: CHANGELOG.md
+
+# What a sandboxed run needs baked into its image: Node at the version
+# .nvmrc pins. The template has no dependencies to warm. TABLATION_API_URL,
+# TABLATION_API_KEY, TABLATION_WORKSPACE_ID and SAMPLE_TABLE_ID are delivered
+# to the run by the platform, never written here.
+sandbox:
+  setup:
+    - |
+      set -e
+      arch="$(uname -m)"; case "$arch" in aarch64|arm64) arch=arm64;; x86_64) arch=x64;; esac
+      curl -fsSL "https://nodejs.org/dist/v24.19.0/node-v24.19.0-linux-${arch}.tar.gz" | tar -xz -C /opt/crew
+      mv "/opt/crew/node-v24.19.0-linux-${arch}" /opt/crew/node
+      for b in node npm npx corepack; do ln -sf "/opt/crew/node/bin/$b" "/opt/crew/bin/$b"; done
+    - node --version && npm --version

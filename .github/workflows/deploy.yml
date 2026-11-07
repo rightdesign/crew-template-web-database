@@ -1,0 +1,46 @@
+name: Deploy to the app host
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE: app
+
+jobs:
+  deploy:
+    # A push to the template repository itself deploys nothing.
+    if: ${{ !github.event.repository.is_template }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: npm test
+      - run: npm run build
+      - name: Build the image and save it as an archive
+        run: |
+          docker build -t "${IMAGE}:${GITHUB_SHA}" .
+          docker save "${IMAGE}:${GITHUB_SHA}" | gzip > app-image.tar.gz
+      # The platform wrote TABLATION_DEPLOY_TOKEN (secret) and
+      # TABLATION_APP_HOST_ID (variable) when it generated this repository.
+      # The token is good for this app host's deploy endpoint and nothing else.
+      - name: Upload the image archive to the app host
+        env:
+          TABLATION_API_URL: ${{ vars.TABLATION_API_URL || 'https://app.tablation.com/api' }}
+          TABLATION_APP_HOST_ID: ${{ vars.TABLATION_APP_HOST_ID }}
+          TABLATION_DEPLOY_TOKEN: ${{ secrets.TABLATION_DEPLOY_TOKEN }}
+        run: |
+          test -n "$TABLATION_APP_HOST_ID" && test -n "$TABLATION_DEPLOY_TOKEN" || { echo "deploy credentials are not set"; exit 1; }
+          curl -fsS -X POST "${TABLATION_API_URL%/}/app-hosts/${TABLATION_APP_HOST_ID}/deploy" \
+            -H "Authorization: Bearer ${TABLATION_DEPLOY_TOKEN}" \
+            -F "archive=@app-image.tar.gz;type=application/gzip"
